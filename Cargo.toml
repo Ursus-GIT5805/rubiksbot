@@ -18,3 +18,10 @@ opencv = { version = "0.93.1", default-features = false, features = [
 		"highgui",
 		"videoio",
 		]}
+
+[dev-dependencies]
+indicatif = "0.17.8"
+plotters = "0.3.7"
+
+[[example]]
+name = "benchmark"
