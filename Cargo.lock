@@ -4,8 +4,9 @@ version = 3
 
 [[package]]
 name = "adafruit_motorkit"
-version = "0.1.1"
-source = "git+https://github.com/Ursus-GIT5805/adafruit_motorkit#ef442cc44caf749788f326d8ff4effab9d47d2bf"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e6d6814fe7302245d55d5786800eafd0fd4a70467ef5b14bf82a1e78775aab8"
 dependencies = [
  "linux-embedded-hal",
  "pwm-pca9685",
