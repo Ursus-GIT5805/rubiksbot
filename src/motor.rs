@@ -123,15 +123,13 @@ impl StepperController {
 		match turn.typ {
 			// Single side turns
 			TurnType::U | TurnType::D | TurnType::B | TurnType::F | TurnType::L | TurnType::R => {
-				let side = turn.typ.get_side()
-					.ok_or(MotorError::InvalidMotorError)?;
+				let side = turn.typ.get_side().ok_or(MotorError::InvalidMotorError)?;
 				let (idx, mot) = self.get_motor(side);
 				self.execute_single(idx, mot, turn.wise)?;
 			}
 			// Advanced turns, needs 2 motors
 			_ => {
-				let (t1, t2) = analyze_advanced_turn(turn)
-					.ok_or(MotorError::InvalidMotorError)?;
+				let (t1, t2) = analyze_advanced_turn(turn).ok_or(MotorError::InvalidMotorError)?;
 
 				let w1 = t1.wise;
 				let w2 = t2.wise;

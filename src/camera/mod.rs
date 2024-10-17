@@ -33,6 +33,7 @@ fn centroid(points: &Vec<Point>) -> Point {
 		return Point::new(-1, -1);
 	}
 
+	// Take the average of all x and y values
 	let mut x = 0f64;
 	let mut y = 0f64;
 	for p in points.iter() {
@@ -49,12 +50,14 @@ fn construct_grid(camsize: Size, image_points: Vector<Point>) -> CVResult<Vec<Ve
 	let diag = pythagoras(camsize.width as f64, camsize.height as f64);
 	let focal_len: f64 = diag / (2.0 * (FOV_RAD / 2.0).tan()); // Calculate the focal length
 
+	// The camera projection matrix
 	let camera_matrix = Mat::from_slice_2d(&[
 		[focal_len, 0.0, 320.0], // updated cx
 		[0.0, focal_len, 240.0], // updated cy
 		[0.0, 0.0, 1.0],
 	])?;
 
+	// The points in the world coordinate
 	let object_points: Vector<Point3d> = vec![
 		Point3d::new(0.0, 0.0, 0.0),
 		Point3d::new(1.2, 0.0, 0.0),
@@ -63,6 +66,7 @@ fn construct_grid(camsize: Size, image_points: Vector<Point>) -> CVResult<Vec<Ve
 	]
 	.into();
 
+	// Convert into Point2d
 	let init_points: Vector<Point2d> = image_points
 		.into_iter()
 		.map(|p| {
@@ -78,6 +82,7 @@ fn construct_grid(camsize: Size, image_points: Vector<Point>) -> CVResult<Vec<Ve
 	let mut rvec = Vector::<f64>::default();
 	let mut tvec = Vector::<f64>::default();
 
+	// Solve PnP
 	let success = cv::calib3d::solve_pnp(
 		&object_points,
 		&init_points,
@@ -96,11 +101,13 @@ fn construct_grid(camsize: Size, image_points: Vector<Point>) -> CVResult<Vec<Ve
 		return Err(cv::error::Error::new(-1, "No success solving PNP"));
 	}
 
+	// Construct the grid of the entire Rubik's Cube
 	let mut grid = vec![vec![vec![Point::new(0, 0); 4]; 4]; 4];
 
 	for i in 0..4 {
 		for j in 0..4 {
 			for k in 0..4 {
+				// Get the point in the world coordinate
 				let fp: Vector<Point3d> = vec![Point3d::new(
 					(i as f64) * 0.4,
 					(j as f64) * 0.4,
@@ -111,6 +118,7 @@ fn construct_grid(camsize: Size, image_points: Vector<Point>) -> CVResult<Vec<Ve
 				let mut proj_points = Vector::<Point2d>::default();
 				let mut jacobian = Mat::default();
 
+				// Project the point onto the image
 				cv::calib3d::project_points(
 					&fp,
 					&mat_rvec,
@@ -125,6 +133,7 @@ fn construct_grid(camsize: Size, image_points: Vector<Point>) -> CVResult<Vec<Ve
 				let p = proj_points
 					.get(0)
 					.map_err(|_| cv::Error::new(-1, "Could not project points"))?;
+
 				let x = p.x as i32;
 				let y = p.y as i32;
 				grid[i][j][k] = Point::new(x, y);
@@ -178,6 +187,7 @@ fn read_side(frame: &mut impl ToInputArray, points: Vector<Point>) -> CVResult<V
 	// Length of the perspective transformation. Arbitrarely chosen
 	const S: i32 = 128;
 
+	// The corner of the final image
 	let dstpts = vec![
 		Point::new(S, 0),
 		Point::new(0, 0),
@@ -189,10 +199,12 @@ fn read_side(frame: &mut impl ToInputArray, points: Vector<Point>) -> CVResult<V
 	let mut srcp = points_to_point2f(points.clone());
 	let mut dstp = points_to_point2f(dstpts);
 
+	// Get transformation matrix
 	let mat = cv::imgproc::get_perspective_transform(&mut srcp, &mut dstp, cv::core::DECOMP_LU)?;
 
 	let mut dst = Mat::default();
 
+	// Apply perspective transformation
 	cv::imgproc::warp_perspective(
 		frame,
 		&mut dst,
@@ -203,8 +215,10 @@ fn read_side(frame: &mut impl ToInputArray, points: Vector<Point>) -> CVResult<V
 		Scalar::default(),
 	)?;
 
+	// Convert to Lab
 	let lab = cvt_color(&mut dst, cv::imgproc::COLOR_RGB2Lab)?;
 
+	// Thresholding (values are manually chosen)
 	let gray = cvt_color(&mut dst, cv::imgproc::COLOR_RGB2GRAY)?;
 	let mask_dark = threshold(&gray, 55.0, cv::imgproc::THRESH_BINARY)?;
 	let mask_bright = threshold(&gray, 240.0, cv::imgproc::THRESH_BINARY_INV)?;
@@ -219,6 +233,7 @@ fn read_side(frame: &mut impl ToInputArray, points: Vector<Point>) -> CVResult<V
 
 	for i in 0..3 {
 		for j in 0..3 {
+			// Position of the area
 			let x1 = (S / 3) * i + O;
 			let x2 = (S / 3) * (i + 1) - O;
 			let y1 = (S / 3) * j + O;
@@ -231,10 +246,12 @@ fn read_side(frame: &mut impl ToInputArray, points: Vector<Point>) -> CVResult<V
 			#[cfg(debug_assertions)]
 			cv::imgproc::rectangle(&mut outframe, rect, BLACK, 2, 0, 0)?;
 
+			// Only look a the are inside of the rect
 			let sliced_dst = Mat::roi(&lab, rect)?;
 			let sliced_mask_d = Mat::roi(&mask_dark, rect)?;
 			let sliced_mask_b = Mat::roi(&mask_bright, rect)?;
 
+			// Calculate masked to non masked ratio
 			let rat = {
 				let tot = w * h;
 				let cnt = cv::core::count_non_zero(&sliced_mask_b)?;
@@ -246,6 +263,7 @@ fn read_side(frame: &mut impl ToInputArray, points: Vector<Point>) -> CVResult<V
 				let scal = convert_scalar(WHITE, cv::imgproc::COLOR_RGB2Lab)?;
 				out[i as usize][j as usize] = scal.into();
 			} else {
+				// Maske the image
 				let masked = {
 					let mut masked = Mat::default();
 					cv::core::bitwise_and(
@@ -257,6 +275,7 @@ fn read_side(frame: &mut impl ToInputArray, points: Vector<Point>) -> CVResult<V
 					masked
 				};
 
+				// Read the color
 				let scalar = cv::core::mean(&sliced_dst, &masked)?;
 				out[i as usize][j as usize] = scalar;
 			}
@@ -306,6 +325,8 @@ fn find_out_grid(frame: &mut Mat, points: Vec<Point>) -> CVResult<Vec<Vec<Vec<Po
 	cv::imgproc::bilateral_filter(frame, &mut filter, 1, 300.0, 300.0, 0)?;
 
 	let mut edges = Mat::default();
+
+	// Apply edge detection
 	cv::imgproc::canny(
 		&mut filter,
 		&mut edges,
@@ -314,6 +335,8 @@ fn find_out_grid(frame: &mut Mat, points: Vec<Point>) -> CVResult<Vec<Vec<Vec<Po
 		3,
 		false,
 	)?;
+
+	// Apply Probalistic Hough Line Transform
 	let lines = {
 		let mut lines: Vector<Vec4i> = vec![].into();
 
@@ -327,7 +350,10 @@ fn find_out_grid(frame: &mut Mat, points: Vec<Point>) -> CVResult<Vec<Vec<Vec<Po
 
 	let mut init_points = points;
 
-	let dist = 20.0;
+	// The distance threshold to be considered a corner
+	const DIST: f64 = 20.0;
+
+	// Check if there is a nearer point
 	for point in init_points.iter_mut() {
 		let mut near = vec![];
 		for line in lines.iter() {
@@ -338,7 +364,7 @@ fn find_out_grid(frame: &mut Mat, points: Vec<Point>) -> CVResult<Vec<Vec<Vec<Po
 
 			let (p, d) = if d1 < d2 { (p1, d1) } else { (p2, d2) };
 
-			if d < dist {
+			if d < DIST {
 				near.push(p);
 			}
 		}
@@ -359,6 +385,7 @@ fn read_colors(frame: &mut Mat, grid: &Vec<Vec<Vec<Point>>>) -> CVResult<Vec<Vec
 	let p2 = vec![grid[3][0][0], grid[0][0][0], grid[0][0][3], grid[3][0][3]].into();
 	let p3 = vec![grid[0][3][0], grid[0][0][0], grid[0][0][3], grid[0][3][3]].into();
 
+	// Read each side
 	let grid1 = read_side(frame, p1)?;
 	let grid2 = read_side(frame, p2)?;
 	let grid3 = read_side(frame, p3)?;
@@ -408,7 +435,8 @@ impl Camera {
 		cam.set(cv::videoio::CAP_PROP_SATURATION, 128.0)?;
 		cam.set(cv::videoio::CAP_PROP_CONTRAST, 32.0)?;
 		cam.set(cv::videoio::CAP_PROP_HUE, 0.0)?;
-		// This is crucial!
+
+		// This is crucial to make grabbing work!!!
 		cam.set(cv::videoio::CAP_PROP_BUFFERSIZE, 1.0)?;
 
 		println!("BRIGHTNESS: {}", cam.get(cv::videoio::CAP_PROP_BRIGHTNESS)?);
@@ -508,6 +536,7 @@ impl Camera {
 pub fn calibrate(cam1: &mut Camera, cam2: &mut Camera, data: &mut CalibrationData) -> CVResult<()> {
 	let mut cnt = vec![(Scalar::default(), 0usize); 6];
 
+	// Take 50 pictures
 	for _ in 0..50 {
 		let mut frame1 = cam1.read()?;
 		let mut frame2 = cam2.read()?;
@@ -533,6 +562,7 @@ pub fn calibrate(cam1: &mut Camera, cam2: &mut Camera, data: &mut CalibrationDat
 		}
 	}
 
+	// Determine the centroids of all colors
 	let out = cnt
 		.into_iter()
 		.map(|(s, n)| {
@@ -631,7 +661,7 @@ fn colors_to_cube(colors: &Vec<Vec<Vec<Scalar>>>, centroids: &Vec<Scalar>) -> Ve
 		(side as usize) * CUBE_AREA + y * CUBE_DIM + x
 	}
 
-	// Convert the index entry of the grids into actual cube coordinates.
+	// Convert the index entry of the grids into actual cube permutation indices.
 	const IDX: [[[usize; 3]; 3]; 6] = [
 		[
 			// red (left)
@@ -767,8 +797,9 @@ fn colors_to_cube(colors: &Vec<Vec<Vec<Scalar>>>, centroids: &Vec<Scalar>) -> Ve
 					continue;
 				}
 
+				// Get nearest centroid (color)
 				let col = get_nearest(grid[i][j], centroids);
-				let idx = IDX[k][i][j];
+				let idx = IDX[k][i][j]; // index on the permutation
 				rcols[idx] = COL_CHAR[col];
 			}
 		}
@@ -871,6 +902,7 @@ pub fn read_cube(
 	#[cfg(debug_assertions)]
 	print_cvec(&rcols);
 
+	// Correct errors
 	if let Some(vec) = correct_errors(rcols) {
 		let s: String = vec.iter().collect();
 		// Convert into arraycube

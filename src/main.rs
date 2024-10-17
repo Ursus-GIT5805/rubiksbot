@@ -103,9 +103,11 @@ fn main() {
 			leds.set_led_msg(LEDMessage::Ok);
 		}
 
+		// Grab the frames
 		let grab1 = cam1.grab();
 		let grab2 = cam2.grab();
 
+		// Only process them if lid is closed
 		if grab1 && grab2 && !lid_open {
 			let fr1 = cam1.retrieve();
 			let fr2 = cam2.retrieve();
@@ -121,7 +123,9 @@ fn main() {
 						std::thread::sleep(std::time::Duration::from_millis(500));
 						leds.quit_message();
 
+						// Solve the cube
 						if let Some(turns) = solver.solve(cube) {
+							// Execute turns
 							for turn in turns {
 								if let Err(e) = steppers.execute_turn(turn) {
 									eprintln!("Error during turning: {}", e);
